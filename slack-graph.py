@@ -1,62 +1,36 @@
-import requests
-import json
-import datetime
+from flask import Flask
+from slackeventsapi import SlackEventAdapter
 import subprocess
-channelList = "https://slack.com/api/channels.list"
-channelHistory = "https://slack.com/api/channels.history"
-token = "YOUR_TOKEN"
+import requests
+import os
 
-def getChannelID():
-    payload = {
-        "token": token
+ENV_VAR = os.environ["ENV_VAR"]
+TOKEN=os.environ["TOKEN"]
+
+app = Flask(__name__)
+
+slack_events_adapter = SlackEventAdapter(ENV_VAR, "/slack/events",app)
+
+@slack_events_adapter.on("message")
+def hookSlackEvents(event_data):
+    app.logger.debug(event_data)
+    headers = {
+        'X-USER-TOKEN': TOKEN,
+        'Content-Length': '0',
     }
-    response = requests.get(channelList, params=payload)
-    json_data = response.json()
-    channels = json_data["channels"]
-    channels_list=[]
-    for channel in channels:
-        channels_list.append(channel['id'])
-    return channels_list
-
-datelist=[]
-def makedatelist():
-    channels_list=getChannelID()
-    for channel_id in channels_list:
-        payload = {
-            "token": token,
-            "channel": channel_id
-        }
-        response = requests.get(channelHistory, params=payload)
-        json_data = response.json()
-        messages = json_data["messages"]
-        for message in messages:
-            dt = datetime.datetime.fromtimestamp(float(message['ts']))
-            month = str(dt.month)
-            day=str(dt.day)
-            if len(month) == 1:
-                month = '0' + month
-            if len(day) == 1:
-                day = '0' + day
-            YMD = str(dt.year) + month + day
-
-            D = [d['date'] == YMD for d in datelist]
-            if True in D:
-                num = int(datelist[D.index(True)]['quantity'])
-                num += 1
-                datelist[D.index(True)]['quantity'] = str(num)
-            else:
-                num=str(1)
-                datelist.append({"date": YMD, "quantity": num})
-    return datelist
-                
-def main():
-    datelists = makedatelist()
-    for date in datelists:
-        date = json.dumps(date)
-        cmd = "curl -X POST YOUR_PIXELA_GRAPH_URL -H 'X-USER-TOKEN:xxxxxxxxxx' -d "
-        cmd = cmd + "'" + date + "'"
-        print(cmd)
+    event_data=event_data["event"]
+    if "subtype" in event_data:
+        if event_data["subtype"] == 'message_deleted':
+            response = requests.put('https://pixe.la/v1/users/pppppowell/graphs/test-graph/decrement', headers=headers)
+            print(response)
+            print("decrement")
+        elif event_data["subtype"] == 'message_changed':
+            pass
+    else:
+        response = requests.put('https://pixe.la/v1/users/pppppowell/graphs/test-graph/increment', headers=headers)
+        print(response)
+        print(event_data["text"])
     
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    app.run()
